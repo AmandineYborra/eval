@@ -1,0 +1,159 @@
+﻿-- EVALUATION PART 1
+
+-- Question 1:
+-- Importer la structure et les données
+
+-- Question 2:
+/*On vous demande de modifier la base de données pour y intégrer les données météorologiques suivantes :
+Pour certain terrain on possède les quantités d’eau tombées selon la saison (hiver, printemps, été, automne).
+Pour certain terrain on possède les températures moyennes, minimales et maximales relevées par mois d’une année (ex : 02/2018).*/
+
+USE evaluation_laferme;
+
+DROP TABLE IF EXISTS precipitations;
+CREATE TABLE precipitations(
+saison VARCHAR (45),
+annee DATE,
+terrain INT(10) UNSIGNED,
+precipitation INT(10),
+idprecipitations INT(10) AUTO_INCREMENT NOT NULL,
+CONSTRAINT PRIMARY KEY PK (idprecipitations),
+CONSTRAINT FK_idterrain_precipitations FOREIGN KEY (terrain) REFERENCES terrain (idterrain)
+);
+
+DROP TABLE IF EXISTS temperature;
+CREATE TABLE temperature(
+idtemperature INT(10) AUTO_INCREMENT NOT NULL,
+temp_min INT(10),
+temp_max INT(10),
+temp_moy INT(10),
+date_releve DATE,
+idterrain INT(10) UNSIGNED,
+CONSTRAINT PRIMARY KEY PK (idtemperature),
+CONSTRAINT FK_idterrain_temperature FOREIGN KEY (idterrain) REFERENCES terrain (idterrain)
+); 
+
+ALTER TABLE terrain 
+ADD idprecipitations INT(10),
+ADD idtemperature INT(10),
+ADD CONSTRAINT FK_idprecipitations_terrain FOREIGN KEY (idprecipitations) REFERENCES precipitations (idprecipitations),
+ADD CONSTRAINT FK_idtemperature_terrain FOREIGN KEY (idtemperature) REFERENCES temperature (idtemperature);
+
+-- Question 3:
+/*Donnez le nombre de plantes cultivées.*/
+
+SELECT COUNT(DISTINCT fkplante) FROM culture;
+
+-- Question 4:
+/*Donnez la fonction qui augmente la référence du terrain de 25 quand celle-ci est inférieure á 26.*/
+
+DELIMITER $$
+DROP FUNCTION IF EXISTS augmenteRefTerrain $$
+
+CREATE FUNCTION augmenteRefTerrain() RETURNS INT(10)
+DETERMINISTIC
+BEGIN
+	UPDATE culture
+	SET fkterrain = fkterrain + 25
+	WHERE fkterrain < 26 ;
+	RETURN fkterrain;
+END $$
+
+DELIMITER ;
+
+-- Question 5:
+/*Donnez le rendement de viande par élevage et par nom d’animal.*/
+
+SELECT quantite / capacite AS rendement, idanimal, nom  
+FROM productionviande AS P
+INNER JOIN elevage AS E ON P.fkelevage = E.idelevage
+INNER JOIN animal AS A ON E.fkanimal = A.idanimal;
+
+-- Question 6:
+/*Donnez la liste des quantités de plante consommées annuellement par animal et élevage.*/
+
+SELECT DISTINCT  Ali.annee, Pl.nom AS Nom_Plantes, Ali.qtx, Ani.nom AS Nom_Animal, E.idelevage
+FROM plante AS Pl
+INNER JOIN alimentation AS Ali ON Pl.idplante = Ali.fkplante
+INNER JOIN elevage AS E ON Ali.fkanimal = E.fkanimal
+INNER JOIN animal AS Ani ON E.fkanimal = Ani.idanimal
+ORDER BY Ali.annee;
+
+-- Question 7:
+/*Donnez la fonction qui permet selon l’élevage et la plante de donner la quantité de plante consommée.*/
+
+DELIMITER $$
+DROP FUNCTION IF EXISTS qtxPlantesConsommees $$
+
+CREATE FUNCTION qtxPlantesConsommees(plante int(10), elevage INT(10)) RETURNS INT(10)
+DETERMINISTIC
+BEGIN
+    DECLARE Qtx INT;
+    SELECT alimentation.qtx INTO Qtx
+    FROM alimentation 
+    INNER JOIN animal ON alimentation.fkanimal = animal.idanimal
+    INNER JOIN elevage ON elevage.fkanimal = animal.idanimal
+    INNER JOIN plante ON alimentation.fkplante = plante.idplante
+    WHERE plante.idplante = plante AND elevage.idelevage =elevage group by idplante;
+    RETURN Qtx;
+END $$
+ 
+ SELECT qtxPlantesConsommees(2, '13')
+
+-- Question 8:
+/*Listez par culture les produits de traitement utilisés et leurs quantités.*/
+
+SELECT c.idculture, trait.qtx, prod.nom
+FROM culture AS c
+INNER JOIN traitement AS trait ON c.idculture = trait.fkculture
+INNER JOIN produit AS prod ON trait.fkproduit = prod.idproduit
+GROUP BY c.idculture, prod.idproduit;
+
+-- Question 9:
+/*Rapportez par unité de surface le résultat précèdent.*/
+
+SELECT c.idculture, trait.qtx, prod.nom, ter.idterrain, ter.surface, trait.qtx/ter.surface AS "QTX/SURFACE"
+FROM culture AS c
+INNER JOIN traitement AS trait ON c.idculture = trait.fkculture
+INNER JOIN produit AS prod ON trait.fkproduit = prod.idproduit
+INNER JOIN terrain AS ter ON c.fkterrain = ter.idterrain
+ORDER BY idterrain;
+
+-- Question 10:
+/*Quel est le nom du type de terre le plus présent selon la surface de terrain.*/
+
+-- Requête simple par Nombe de terrains
+SELECT typt.idtype_terre, typt.nom, COUNT(DISTINCT ter.surface) AS "Nb Terrains"
+FROM type_terre AS typt
+INNER JOIN terrain AS ter ON typt.idtype_terre = ter.fktype_terre
+HAVING COUNT(typt.idtype_terre);
+
+-- Requête imbiquée par Surface de terrain
+select idtype_terre, nom, max(Surface_Totale)
+from ( SELECT typt.idtype_terre, typt.nom, SUM(ter.surface) AS Surface_Totale
+FROM type_terre AS typt
+INNER JOIN terrain AS ter ON typt.idtype_terre = ter.fktype_terre
+GROUP BY typt.idtype_terre) as s;
+
+-- Question 11:
+/*Donnez la liste pour chaque type de terre de la question précédente.*/
+
+SELECT typt.idtype_terre, typt.nom, SUM(ter.surface) AS "Surface Totale"
+FROM type_terre AS typt
+INNER JOIN terrain AS ter ON typt.idtype_terre = ter.fktype_terre
+GROUP BY typt.idtype_terre;
+
+-- Question 12:
+/*Créez une contrainte qui empêche un employé occupant le poste 11 de s’occuper d’une culture autre que 112 et 232.*/
+
+DELIMITER $$
+create trigger poste_assigne 
+BEFORE UPDATE ON culture 
+FOR EACH ROW
+BEGIN 
+	UPDATE culture SET idculture = 112 OR idculture =232 
+	WHERE culture.fkresponsable = employe.fkposte 
+	AND employe.fkposte = poste.idposte AND poste.nom = 11;
+END$$
+
+DELIMITER ;

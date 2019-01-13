@@ -1,0 +1,169 @@
+-- EVALUATION PART 2
+
+-- Question 1:
+/*Intégrer les données de relevés de températures*/
+
+USE evaluation_laferme;
+
+LOAD DATA INFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/evaluation/temperature.csv' 
+INTO TABLE temperature
+FIELDS TERMINATED BY ',' 
+ENCLOSED BY ''
+LINES TERMINATED BY '\n'
+IGNORE 1 ROWS;
+
+-- Mais le jeu de données ne s'y prêtant pas, j'ai dû importer les données en passant directement par la table 'temperature'
+
+-- Question 2:
+/*Intégrer les données de relevés de précipitations*/
+
+LOAD DATA INFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/evaluation/pluie.csv' 
+INTO TABLE precipitations
+FIELDS TERMINATED BY ',' 
+LINES TERMINATED BY '\n'
+IGNORE 1 ROWS
+(saison, @var2, @var1, @var3)
+SET terrain = IF(@var1 = 'soixante sept', 67,
+				IF(@var1 = 'dix sept', 17,
+				IF(@var1 = 'treize', 13,
+				IF(@var1 = 'vingt cinq', 25,
+				IF(@var1 = 'trente trois', 33,
+				IF(@var1 = 'quarante sept', 47,
+				IF(@var1 = 'quinze', 15,
+				IF(@var1 = 'quarante quatre', 44,
+				IF(@var1 = 'quarante et un', 41,
+				IF(@var1 = 'quatre vingt', 80,
+				IF(@var1 = 'soixante neuf', 69,
+				@var1
+				))))))))))),
+annee = STR_TO_DATE(@var2, "%y"),
+precipitation = nullif(@var3, 0);
+
+
+-- Question 3:
+/*Pour les températures appliquez la règle suivante :
+Si la température moyenne est supérieure à la maximale alors il faut les intervertir.
+Si la température moyenne est égale à la maximale, alors la température moyenne est égale à la moyenne du mini et du max.*/
+
+-- SQL:
+DELIMITER $$
+DROP TRIGGER IF EXISTS permutationTemperatures $$
+
+CREATE TRIGGER permutationTemperatures
+BEFORE INSERT ON temperature
+FOR EACH ROW
+BEGIN
+	DECLARE temp FLOAT;
+	IF NEW.temp_moy > NEW.temp_max THEN
+		SET temp = NEW.temp_max, NEW.temp_max = NEW.temp_moy, NEW.temp_moy = temp;
+	END IF;
+END $$
+
+DELIMITER ;
+
+DELIMITER $$
+DROP TRIGGER IF EXISTS nouvellesMoyennes $$
+
+CREATE TRIGGER nouvellesMoyennes
+BEFORE INSERT ON temperature
+FOR EACH ROW
+BEGIN
+	IF NEW.temp_moy = NEW.temp_max THEN
+		SET NEW.temp_moy = (NEW.temp_min + NEW.temp_max)/2;
+	END IF;
+END $$
+
+DELIMITER ;
+
+
+/*Pour les précipitations certains champs ne sont pas des valeurs numériques mais des caractères. Si vous trouvez des doublons vous devez sommer les valeurs de précipitations.
+D’autres champs sont hors normes
+-Si le niveau est entre 2300 et 5500 dans ces cas le niveau des précipitations est égale :
+Si la saison est l’automne le niveau réel = niveau tropicale divise par 10
+Si la saison est l’été le niveau réel = niveau tropicale divise par 100
+- Au-delà de 5500 le niveau est égale a la moyenne des précipitations de la saison et de la date, sinon en cas d’un unique uplet précipitation=200mm.*/
+
+-- SQL:
+DELIMITER $$
+DROP TRIGGER IF EXISTS nouvellesPrecipitations $$
+CREATE TRIGGER nouvellesPrecipitations
+BEFORE INSERT ON precipitations
+FOR EACH ROW
+BEGIN
+	IF NEW.precipitation SELECT  COUNT(*) AS nbr_doublon, saison, annee, terrain, precipitation FROM precipitations 
+		GROUP BY saison, annee, terrain, precipitation HAVING  count(*)>1 THEN
+		SET NEW. = (NEW.temp_min + NEW.temp_max)/2;
+	END IF;
+END $$
+
+DELIMITER ;
+
+DELIMITER $$
+DROP TRIGGER IF EXISTS valeursHorsNomrmes $$
+
+CREATE TRIGGER valeursHorsNomrmes
+BEFORE INSERT ON precipitations
+FOR EACH ROW
+BEGIN
+	IF 2300 < NEW.precipitaion < 5500 THEN
+		IF NEW.saison = 'automne' THEN 
+			SET NEW.precipitation = NEW.precipitation/10;
+		END IF;
+		IF NEW.saison = 'été' THEN
+			SET NEW.precipitation = NEW.precipitation/100;
+		END IF;
+	END IF;
+    IF NEW.precipitation > 5500 THEN
+		SET NEW.precipitation = AVG(NEW.precipitation);
+	END IF;
+END $$
+
+DELIMITER ;
+
+-- Question :4
+/*Donnez les statistiques simples (min, max, écart type, variance, …) concernant les rendements par plante, année et culture.
+	Donnez des statistiques globales sur les rendements par plante et année.*/
+
+SELECT annee, pl.nom AS Nom_Plante, MIN(rendement) AS Rendement_Min, MAX(rendement) AS Rendement_Max, AVG(rendement) AS Rendement_Moyen,
+	VARIANCE(rendement) AS Ecart_Type_Rend
+FROM culture
+INNER JOIN plante AS pl ON fkplante = idplante
+GROUP BY annee, pl.nom
+ORDER BY annee;
+
+-- Question 5:
+/*Donnez les statistiques simples (min, max, écart type, variance, …) concernant la production animale par animal, année et élevage.
+	Donnez des statistiques globales sur les rendements par animal et année.
+	Donnez les statistiques simples (min, max, écart type, variance, …) concernant le rendement agricole en fonction du type de terre des terrains et plante par année.*/
+
+SELECT annee, idelevage, an.nom AS Nom_Animal, quantite / capacite AS rendement, MIN(quantite / capacite) AS Rendement_Min, MAX(quantite / capacite) AS Rendement_Max, 
+AVG(quantite / capacite) AS Rendement_Moyen, VARIANCE(quantite / capacite) AS Ecart_Type_Rendement
+FROM productionviande
+INNER JOIN elevage ON fkelevage = idelevage
+INNER JOIN animal AS an ON fkanimal = an.idanimal
+GROUP BY annee, idelevage
+ORDER BY annee;
+
+SELECT c.annee, typT.nom AS Nom_Typ, ter.idterrain, ter.surface, pl.nom AS Nom_Plante, MIN(c.rendement) AS Rendement_Min, MAX(c.rendement) AS Rendement_Max, AVG(c.rendement) AS Rendement_Moyen,
+	VARIANCE(c.rendement) AS Ecart_Type_Rend
+FROM type_terre AS typT
+INNER JOIN terrain AS ter ON typT.idtype_terre = ter.fktype_terre
+INNER JOIN culture AS c ON ter.idterrain = c.fkterrain
+INNER JOIN plante AS pl ON c.fkplante = pl.idplante
+GROUP BY typT.nom, pl.nom
+ORDER BY annee;
+
+-- Question 6:
+/*Est-ce qu’un salarié influe-t-il sur le rendement d’une culture quand il en est responsable ?*/
+
+SELECT c. annee, c.idculture, c.rendement, emp.nom
+FROM culture AS c
+INNER JOIN employe AS emp on c.fkresponsable = emp.idemploye
+GROUP BY c.idculture;
+
+-- Question 7:
+/*Existe-t-il des données singulières qui semblent ne pas correspondre au scope ou domaine de champs ? Si oui expliquez quoi faire, si non que devons-nous réaliser alors ?*/
+
+-- Question 8:
+/*Essayez de trouver des impacts solo (un élément a une action sur un autre élément) et des impacts multiples (des éléments combinés ont une action sur un élément). 
+Donnez tous les détails de calculs en sql ou/et python.*/
